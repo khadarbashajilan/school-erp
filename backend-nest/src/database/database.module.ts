@@ -71,40 +71,14 @@ const ALL_ENTITIES = [
   QuizAnswerEntity,
   QuizActivityLogEntity,
 ];
+import { buildDataSourceOptions } from './typeorm-options';
 
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const url = config.get<string>('DATABASE_URL');
-        const baseOptions = {
-          type: 'postgres' as const,
-          entities: ALL_ENTITIES,
-          synchronize: true, // Always true for now to auto-create tables on Render
-          logging: config.get('NODE_ENV') === 'development',
-          ssl:
-            config.get('NODE_ENV') === 'production'
-              ? { rejectUnauthorized: false }
-              : false,
-        };
-
-        if (url) {
-          return {
-            ...baseOptions,
-            url,
-          };
-        }
-
-        return {
-          ...baseOptions,
-          host: config.get<string>('DB_HOST', 'localhost'),
-          port: config.get<number>('DB_PORT', 5432),
-          username: config.get<string>('DB_USERNAME', 'postgres'),
-          password: config.get<string>('DB_PASSWORD', 'postgres'),
-          database: config.get<string>('DB_NAME', 'school_erp'),
-        };
-      },
+      useFactory: (config: ConfigService) =>
+        buildDataSourceOptions((key) => config.get<string>(key)),
     }),
   ],
   exports: [TypeOrmModule],
