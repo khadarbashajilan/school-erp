@@ -1,4 +1,4 @@
-import { IsEnum, IsString, IsNotEmpty, IsOptional, IsNumber, Min, IsArray, ValidateNested } from 'class-validator';
+import { IsEnum, IsString, IsNotEmpty, IsOptional, IsNumber, Min, IsArray, ValidateNested,  Allow } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuestionType } from '../../database/entities/quiz-question.entity';
@@ -41,6 +41,8 @@ export class CreateQuestionDto {
     ],
     description: 'Correct answer: string for MCQ/TF, string[] for fill_blank',
   })
+
+  @Allow()
   correctAnswer: string | string[];
 
   @ApiProperty({ example: 1, description: 'Marks for this question (min 0.5)' })
