@@ -1,13 +1,9 @@
-import { IsString, IsNotEmpty, IsOptional, IsDateString, IsInt, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsInt, Min, Max } from 'class-validator';
 
 export class CreateQuizDto {
   @IsString()
   @IsNotEmpty()
   title: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
 
   @IsString()
   @IsNotEmpty()

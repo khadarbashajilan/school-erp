@@ -1,43 +1,91 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { QuizEntity } from '../database/entities/quiz.entity';
-import { QuizQuestionEntity } from '../database/entities/quiz-question.entity';
+import { QuizEntity, QuizStatus } from '../database/entities/quiz.entity';
+import { QuizQuestionEntity, QuestionType } from '../database/entities/quiz-question.entity';
+import { CreateQuizDto } from './dto/create-quiz.dto';
+import { CreateQuestionDto } from './dto/create-question.dto';
 
-// @Injectable() tells NestJS this class can be injected into controllers
 @Injectable()
 export class QuizService {
   constructor(
-    // InjectRepository gives us access to the Quiz table
     @InjectRepository(QuizEntity)
     private quizRepository: Repository<QuizEntity>,
-    // We also need access to QuizQuestion table for adding questions
     @InjectRepository(QuizQuestionEntity)
     private questionRepository: Repository<QuizQuestionEntity>,
   ) {}
 
-  // Teacher creates a new quiz (stub — logic comes later)
-  async createQuiz(dto: any) {
-    return { message: 'Quiz created stub' };
+  async createQuiz(dto: CreateQuizDto, user: any) {
+    const scheduledAt = new Date(`${dto.scheduledDate}T${dto.startTime}:00`);
+
+    const quiz = this.quizRepository.create({
+      title: dto.title,
+      scheduledAt,
+      durationMinutes: dto.durationMinutes,
+      classId: dto.classId,
+      section: dto.section,
+      subjectId: dto.subjectId,
+      teacherId: user.teacherId,
+      status: QuizStatus.DRAFT,
+      schoolId: user.schoolId || 'school_001',
+    });
+
+    return this.quizRepository.save(quiz);
   }
 
-  // Teacher views all their quizzes (stub)
-  async getMyQuizzes() {
-    return { message: 'My quizzes list stub' };
+  async getMyQuizzes(user: any) {
+    return this.quizRepository.find({
+      where: { teacherId: user.teacherId },
+      order: { createdAt: 'DESC' },
+    });
   }
 
-  // Teacher views a single quiz with its questions (stub)
   async getQuizById(id: string) {
-    return { message: `Quiz ${id} detail stub` };
+    const quiz = await this.quizRepository.findOne({ where: { id } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    const questions = await this.questionRepository.find({
+      where: { quizId: id },
+      order: { orderIndex: 'ASC' },
+    });
+
+    return { ...quiz, questions };
   }
 
-  // Teacher publishes — moves DRAFT to LIVE (stub)
   async publishQuiz(id: string) {
-    return { message: 'Quiz published stub' };
+    const quiz = await this.quizRepository.findOne({ where: { id } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+    if (quiz.status !== QuizStatus.DRAFT) {
+      throw new BadRequestException('Only draft quizzes can be published');
+    }
+
+    quiz.status = QuizStatus.LIVE;
+    return this.quizRepository.save(quiz);
   }
 
-  // Teacher adds a question to a draft quiz (stub)
-  async addQuestion(quizId: string, dto: any) {
-    return { message: 'Question added stub' };
+  async addQuestion(quizId: string, dto: CreateQuestionDto) {
+    const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+    if (quiz.status !== QuizStatus.DRAFT) {
+      throw new BadRequestException('Can only add questions to draft quizzes');
+    }
+
+    const lastQuestion = await this.questionRepository.findOne({
+      where: { quizId },
+      order: { orderIndex: 'DESC' },
+    });
+    const nextOrder = lastQuestion ? lastQuestion.orderIndex + 1 : 1;
+
+    const question = this.questionRepository.create({
+      quizId,
+      orderIndex: nextOrder,
+      questionType: dto.questionType,
+      questionText: dto.questionText,
+      options: dto.options || null,
+      correctAnswer: dto.correctAnswer,
+      marks: dto.marks,
+    });
+
+    return this.questionRepository.save(question);
   }
 }

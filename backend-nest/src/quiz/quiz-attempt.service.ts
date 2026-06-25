@@ -1,57 +1,178 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { QuizEntity } from '../database/entities/quiz.entity';
-import { QuizAttemptEntity } from '../database/entities/quiz-attempt.entity';
+import { QuizEntity, QuizStatus } from '../database/entities/quiz.entity';
+import { QuizAttemptEntity, AttemptStatus } from '../database/entities/quiz-attempt.entity';
 import { QuizAnswerEntity } from '../database/entities/quiz-answer.entity';
+import { QuizQuestionEntity } from '../database/entities/quiz-question.entity';
+import { QuizResultService } from './quiz-result.service';
+import { JoinQuizDto } from './dto/join-quiz.dto';
+import { SaveAnswerDto } from './dto/save-answer.dto';
 
-// @Injectable() allows NestJS to inject this service into QuizStudentController
 @Injectable()
 export class QuizAttemptService {
   constructor(
-    // Need QuizEntity to check if quiz is LIVE and get its questions
     @InjectRepository(QuizEntity)
     private quizRepository: Repository<QuizEntity>,
-    // Need QuizAttemptEntity to track the student's session
     @InjectRepository(QuizAttemptEntity)
     private attemptRepository: Repository<QuizAttemptEntity>,
-    // Need QuizAnswerEntity to save individual answers
     @InjectRepository(QuizAnswerEntity)
     private answerRepository: Repository<QuizAnswerEntity>,
+    @InjectRepository(QuizQuestionEntity)
+    private questionRepository: Repository<QuizQuestionEntity>,
+    private resultService: QuizResultService,
   ) {}
 
-  // Student views available quizzes for their class (stub)
   async getStudentQuizzes() {
-    return { message: 'Student quizzes list stub' };
+    return this.quizRepository.find({
+      where: { status: QuizStatus.LIVE },
+      order: { scheduledAt: 'ASC' },
+    });
   }
 
-  // Student views a quiz card (no correct answers) (stub)
   async getQuizDetail(id: string) {
-    return { message: 'Quiz detail stub' };
+    const quiz = await this.quizRepository.findOne({ where: { id } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    const questions = await this.questionRepository.find({
+      where: { quizId: id },
+      order: { orderIndex: 'ASC' },
+    });
+
+    // Strip correct answers — never send to students
+    const safeQuestions = questions.map(({ correctAnswer, ...rest }) => rest);
+
+    return { ...quiz, questions: safeQuestions };
   }
 
-  // Student enters waiting room — creates an attempt row (stub)
-  async joinQuiz(quizId: string, dto: any) {
-    return { message: 'Joined waiting room stub' };
+  async joinQuiz(quizId: string, dto: JoinQuizDto, user: any) {
+    const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    const existing = await this.attemptRepository.findOne({
+      where: { quizId, studentId: user.studentId || user.id },
+    });
+    if (existing) throw new BadRequestException('Already joined this quiz');
+
+    const attempt = this.attemptRepository.create({
+      quizId,
+      studentId: user.studentId || user.id,
+      status: AttemptStatus.IN_PROGRESS,
+      schoolId: user.schoolId || 'school_001',
+    });
+
+    return this.attemptRepository.save(attempt);
   }
 
-  // Student starts quiz — seeds answer rows for all questions (stub)
-  async startQuiz(quizId: string) {
-    return { message: 'Quiz started stub' };
+  async startQuiz(quizId: string, user: any) {
+    const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    let attempt = await this.attemptRepository.findOne({
+      where: { quizId, studentId: user.studentId || user.id },
+    });
+
+    if (!attempt) {
+      attempt = this.attemptRepository.create({
+        quizId,
+        studentId: user.studentId || user.id,
+        status: AttemptStatus.IN_PROGRESS,
+        schoolId: user.schoolId || 'school_001',
+      });
+      attempt = await this.attemptRepository.save(attempt);
+    }
+
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException('Attempt is already submitted');
+    }
+
+    // Seed answer rows if not already seeded
+    const existingAnswers = await this.answerRepository.count({
+      where: { attemptId: attempt.id },
+    });
+
+    if (existingAnswers === 0) {
+      const questions = await this.questionRepository.find({
+        where: { quizId },
+        order: { orderIndex: 'ASC' },
+      });
+
+      const answerRows = questions.map((q) =>
+        this.answerRepository.create({
+          attemptId: attempt.id,
+          questionId: q.id,
+        }),
+      );
+
+      await this.answerRepository.save(answerRows);
+    }
+
+    attempt.startedAt = new Date();
+    await this.attemptRepository.save(attempt);
+
+    return { attemptId: attempt.id, startedAt: attempt.startedAt };
   }
 
-  // Auto-save a single answer (stub)
-  async saveAnswer(quizId: string, questionId: string, dto: any) {
-    return { message: 'Answer saved stub' };
+  async saveAnswer(quizId: string, questionId: string, dto: SaveAnswerDto, user: any) {
+    const attempt = await this.attemptRepository.findOne({
+      where: { quizId, studentId: user.studentId || user.id, status: AttemptStatus.IN_PROGRESS },
+    });
+    if (!attempt) throw new NotFoundException('Active attempt not found');
+
+    let answer = await this.answerRepository.findOne({
+      where: { attemptId: attempt.id, questionId },
+    });
+
+    if (answer) {
+      answer.givenAnswer = dto.givenAnswer;
+    } else {
+      answer = this.answerRepository.create({
+        attemptId: attempt.id,
+        questionId,
+        givenAnswer: dto.givenAnswer,
+      });
+    }
+
+    return this.answerRepository.save(answer);
   }
 
-  // Student submits — locks attempt, runs scoring (stub)
-  async submitQuiz(quizId: string) {
-    return { message: 'Quiz submitted stub' };
+  async submitQuiz(quizId: string, user: any) {
+    const attempt = await this.attemptRepository.findOne({
+      where: { quizId, studentId: user.studentId || user.id, status: AttemptStatus.IN_PROGRESS },
+    });
+    if (!attempt) throw new NotFoundException('Active attempt not found');
+
+    attempt.status = AttemptStatus.SUBMITTED;
+    attempt.submittedAt = new Date();
+    await this.attemptRepository.save(attempt);
+
+    const result = await this.resultService.calculateScore(attempt.id);
+
+    return {
+      attemptId: attempt.id,
+      submittedAt: attempt.submittedAt,
+      ...result,
+    };
   }
 
-  // Student views their score (stub)
-  async getResult(quizId: string) {
-    return { message: 'Result retrieval stub' };
+  async getResult(quizId: string, user: any) {
+    const attempt = await this.attemptRepository.findOne({
+      where: { quizId, studentId: user.studentId || user.id },
+    });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Quiz not submitted yet');
+    }
+
+    const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
+    const questions = await this.questionRepository.find({ where: { quizId } });
+    const totalMarks = questions.reduce((sum, q) => sum + Number(q.marks), 0);
+
+    return {
+      attemptId: attempt.id,
+      score: attempt.score,
+      total: totalMarks,
+      submittedAt: attempt.submittedAt,
+    };
   }
 }

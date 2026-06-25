@@ -1,29 +1,60 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { QuizAttemptEntity } from '../database/entities/quiz-attempt.entity';
 import { QuizAnswerEntity } from '../database/entities/quiz-answer.entity';
 import { QuizQuestionEntity } from '../database/entities/quiz-question.entity';
-import { QuizAttemptEntity } from '../database/entities/quiz-attempt.entity';
 
-// @Injectable() allows this service to be injected into QuizAttemptService
 @Injectable()
 export class QuizResultService {
   constructor(
-    // Need QuizAnswerEntity to get the student's given answers
     @InjectRepository(QuizAnswerEntity)
     private answerRepository: Repository<QuizAnswerEntity>,
-    // Need QuizQuestionEntity to get the correct answers for comparison
     @InjectRepository(QuizQuestionEntity)
     private questionRepository: Repository<QuizQuestionEntity>,
-    // Need QuizAttemptEntity to save the final calculated score
     @InjectRepository(QuizAttemptEntity)
     private attemptRepository: Repository<QuizAttemptEntity>,
   ) {}
 
-  // Called by QuizAttemptService.submitQuiz() after locking the attempt
-  // Compares givenAnswer vs correctAnswer for each question
   async calculateScore(attemptId: string) {
-    // Logic comes in implementation phasePlan·
-    return { score: 0, total: 0 };
+    const attempt = await this.attemptRepository.findOne({ where: { id: attemptId } });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+
+    const answers = await this.answerRepository.find({ where: { attemptId } });
+    const questions = await this.questionRepository.find({
+      where: { quizId: attempt.quizId },
+    });
+
+    let totalScore = 0;
+
+    for (const answer of answers) {
+      const question = questions.find((q) => q.id === answer.questionId);
+      if (!question || answer.givenAnswer === null) continue;
+
+      let correct = false;
+
+      if (question.questionType === 'mcq_single' || question.questionType === 'true_false') {
+        correct = answer.givenAnswer === question.correctAnswer;
+      }
+
+      if (question.questionType === 'fill_blank') {
+        const accepted = (question.correctAnswer as string[]).map((a) => a.toLowerCase().trim());
+        const given = String(answer.givenAnswer || '').toLowerCase().trim();
+        correct = accepted.includes(given);
+      }
+
+      const marks = correct ? Number(question.marks) : 0;
+      answer.marksObtained = marks;
+      totalScore += marks;
+    }
+
+    await this.answerRepository.save(answers);
+
+    attempt.score = totalScore;
+    await this.attemptRepository.save(attempt);
+
+    const totalMarks = questions.reduce((sum, q) => sum + Number(q.marks), 0);
+
+    return { score: totalScore, total: totalMarks };
   }
 }
