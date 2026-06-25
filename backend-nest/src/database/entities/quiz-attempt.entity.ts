@@ -9,7 +9,9 @@ export enum AttemptStatus {
 }
 
 @Entity('quiz_attempts')
+// Unique constraint — one student can only have ONE attempt per quiz
 @Index(['quizId', 'studentId'], { unique: true })
+// Index for queries like "find all IN_PROGRESS attempts for quiz X"
 @Index(['quizId', 'status'])
 export class QuizAttemptEntity {
   @PrimaryGeneratedColumn('uuid')
@@ -21,12 +23,14 @@ export class QuizAttemptEntity {
   @Column({ name: 'student_id' })
   studentId: string;
 
+  // nullable because startQuiz() sets this — not set at join time
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt: Date | null;
 
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submittedAt: Date | null;
 
+  // Filled by calculateScore() after submission
   @Column({ name: 'score', type: 'numeric', precision: 6, scale: 2, nullable: true })
   score: number | null;
 

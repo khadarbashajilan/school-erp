@@ -16,10 +16,12 @@ export class QuizResultService {
     private attemptRepository: Repository<QuizAttemptEntity>,
   ) {}
 
+  // Compare each answer against the question's correctAnswer, assign marks
   async calculateScore(attemptId: string) {
     const attempt = await this.attemptRepository.findOne({ where: { id: attemptId } });
     if (!attempt) throw new NotFoundException('Attempt not found');
 
+    // Fetch all answers for this attempt + all questions for this quiz
     const answers = await this.answerRepository.find({ where: { attemptId } });
     const questions = await this.questionRepository.find({
       where: { quizId: attempt.quizId },
@@ -29,14 +31,16 @@ export class QuizResultService {
 
     for (const answer of answers) {
       const question = questions.find((q) => q.id === answer.questionId);
-      if (!question || answer.givenAnswer === null) continue;
+      if (!question || answer.givenAnswer === null) continue; // unanswered = 0 marks
 
       let correct = false;
 
+      // MCQ & True/False: exact string match
       if (question.questionType === 'mcq_single' || question.questionType === 'true_false') {
         correct = answer.givenAnswer === question.correctAnswer;
       }
 
+      // Fill-in-the-blank: case-insensitive, any accepted answer
       if (question.questionType === 'fill_blank') {
         const accepted = (question.correctAnswer as string[]).map((a) => a.toLowerCase().trim());
         const given = String(answer.givenAnswer || '').toLowerCase().trim();
@@ -48,8 +52,8 @@ export class QuizResultService {
       totalScore += marks;
     }
 
+    // Persist per-question marks and total score
     await this.answerRepository.save(answers);
-
     attempt.score = totalScore;
     await this.attemptRepository.save(attempt);
 

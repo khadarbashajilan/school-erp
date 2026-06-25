@@ -6,8 +6,10 @@ import { QuizQuestionEntity, QuestionType } from '../database/entities/quiz-ques
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 
+// @Injectable() marks this as a NestJS service — can be injected into controllers
 @Injectable()
 export class QuizService {
+  // @InjectRepository gives us a TypeORM repository to query the DB
   constructor(
     @InjectRepository(QuizEntity)
     private quizRepository: Repository<QuizEntity>,
@@ -15,9 +17,12 @@ export class QuizService {
     private questionRepository: Repository<QuizQuestionEntity>,
   ) {}
 
+  // Teacher creates a draft quiz
   async createQuiz(dto: CreateQuizDto, user: any) {
+    // Combine date + time strings from the DTO into a single Date object
     const scheduledAt = new Date(`${dto.scheduledDate}T${dto.startTime}:00`);
 
+    // .create() builds an entity instance (does NOT save to DB yet)
     const quiz = this.quizRepository.create({
       title: dto.title,
       scheduledAt,
@@ -25,21 +30,23 @@ export class QuizService {
       classId: dto.classId,
       section: dto.section,
       subjectId: dto.subjectId,
-      teacherId: user.teacherId,
+      teacherId: user.teacherId, // From JWT token via @CurrentUser()
       status: QuizStatus.DRAFT,
       schoolId: user.schoolId || 'school_001',
     });
 
-    return this.quizRepository.save(quiz);
+    return this.quizRepository.save(quiz); // .save() actually INSERTs into DB
   }
 
+  // List all quizzes created by the logged-in teacher
   async getMyQuizzes(user: any) {
     return this.quizRepository.find({
       where: { teacherId: user.teacherId },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: 'DESC' }, // newest first
     });
   }
 
+  // Get a single quiz with its questions (teacher sees correct answers)
   async getQuizById(id: string) {
     const quiz = await this.quizRepository.findOne({ where: { id } });
     if (!quiz) throw new NotFoundException('Quiz not found');
@@ -52,6 +59,7 @@ export class QuizService {
     return { ...quiz, questions };
   }
 
+  // Change status from DRAFT → LIVE so students can see it
   async publishQuiz(id: string) {
     const quiz = await this.quizRepository.findOne({ where: { id } });
     if (!quiz) throw new NotFoundException('Quiz not found');
@@ -63,6 +71,7 @@ export class QuizService {
     return this.quizRepository.save(quiz);
   }
 
+  // Add a question to a draft quiz
   async addQuestion(quizId: string, dto: CreateQuestionDto) {
     const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
     if (!quiz) throw new NotFoundException('Quiz not found');
@@ -70,6 +79,7 @@ export class QuizService {
       throw new BadRequestException('Can only add questions to draft quizzes');
     }
 
+    // Auto-increment order — find the highest existing order, add 1
     const lastQuestion = await this.questionRepository.findOne({
       where: { quizId },
       order: { orderIndex: 'DESC' },

@@ -10,8 +10,9 @@ import { QuizService } from './quiz.service';
 import { QuizAttemptService } from './quiz-attempt.service';
 import { QuizResultService } from './quiz-result.service';
 
+// @Module() ties everything together — NestJS uses this to know what to register
 @Module({
-  // 1. Tell TypeORM which entities this module will use
+  // TypeOrmModule.forFeature() makes these repositories injectable in this module's services
   imports: [
     TypeOrmModule.forFeature([
       QuizEntity, 
@@ -20,9 +21,9 @@ import { QuizResultService } from './quiz-result.service';
       QuizAnswerEntity
     ]),
   ],
-  // 2. The Gatekeepers (HTTP endpoints)
+  // Controllers handle HTTP requests and delegate to services
   controllers: [QuizController, QuizStudentController],
-  // 3. The Managers (Business Logic)
+  // Providers = services that can be injected (@Injectable) into controllers or other services
   providers: [
     QuizService, 
     QuizAttemptService, 

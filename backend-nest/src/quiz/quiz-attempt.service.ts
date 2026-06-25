@@ -20,9 +20,11 @@ export class QuizAttemptService {
     private answerRepository: Repository<QuizAnswerEntity>,
     @InjectRepository(QuizQuestionEntity)
     private questionRepository: Repository<QuizQuestionEntity>,
+    // Injecting another service (not a repo) — NestJS auto-resolves it
     private resultService: QuizResultService,
   ) {}
 
+  // List all LIVE quizzes for students
   async getStudentQuizzes() {
     return this.quizRepository.find({
       where: { status: QuizStatus.LIVE },
@@ -30,6 +32,7 @@ export class QuizAttemptService {
     });
   }
 
+  // Show quiz details to student — WITHOUT correct answers
   async getQuizDetail(id: string) {
     const quiz = await this.quizRepository.findOne({ where: { id } });
     if (!quiz) throw new NotFoundException('Quiz not found');
@@ -39,16 +42,18 @@ export class QuizAttemptService {
       order: { orderIndex: 'ASC' },
     });
 
-    // Strip correct answers — never send to students
+    // Destructure to remove correctAnswer before sending to client
     const safeQuestions = questions.map(({ correctAnswer, ...rest }) => rest);
 
     return { ...quiz, questions: safeQuestions };
   }
 
+  // Student registers interest (creates an attempt record)
   async joinQuiz(quizId: string, dto: JoinQuizDto, user: any) {
     const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
     if (!quiz) throw new NotFoundException('Quiz not found');
 
+    // Prevent duplicate joins
     const existing = await this.attemptRepository.findOne({
       where: { quizId, studentId: user.studentId || user.id },
     });
@@ -64,6 +69,7 @@ export class QuizAttemptService {
     return this.attemptRepository.save(attempt);
   }
 
+  // Student begins quiz — creates answer rows for every question
   async startQuiz(quizId: string, user: any) {
     const quiz = await this.quizRepository.findOne({ where: { id: quizId } });
     if (!quiz) throw new NotFoundException('Quiz not found');
@@ -72,6 +78,7 @@ export class QuizAttemptService {
       where: { quizId, studentId: user.studentId || user.id },
     });
 
+    // Auto-join if they haven't explicitly joined
     if (!attempt) {
       attempt = this.attemptRepository.create({
         quizId,
@@ -86,7 +93,8 @@ export class QuizAttemptService {
       throw new BadRequestException('Attempt is already submitted');
     }
 
-    // Seed answer rows if not already seeded
+    // Seed one answer row per question (all null initially)
+    // So the student has blank slots to fill
     const existingAnswers = await this.answerRepository.count({
       where: { attemptId: attempt.id },
     });
@@ -113,6 +121,8 @@ export class QuizAttemptService {
     return { attemptId: attempt.id, startedAt: attempt.startedAt };
   }
 
+  // Save (or update) the student's answer for one question
+  // Called each time they change an answer — upsert pattern
   async saveAnswer(quizId: string, questionId: string, dto: SaveAnswerDto, user: any) {
     const attempt = await this.attemptRepository.findOne({
       where: { quizId, studentId: user.studentId || user.id, status: AttemptStatus.IN_PROGRESS },
@@ -124,7 +134,7 @@ export class QuizAttemptService {
     });
 
     if (answer) {
-      answer.givenAnswer = dto.givenAnswer;
+      answer.givenAnswer = dto.givenAnswer; // update existing
     } else {
       answer = this.answerRepository.create({
         attemptId: attempt.id,
@@ -136,6 +146,7 @@ export class QuizAttemptService {
     return this.answerRepository.save(answer);
   }
 
+  // Final submission — mark as SUBMITTED and calculate score
   async submitQuiz(quizId: string, user: any) {
     const attempt = await this.attemptRepository.findOne({
       where: { quizId, studentId: user.studentId || user.id, status: AttemptStatus.IN_PROGRESS },
@@ -146,6 +157,7 @@ export class QuizAttemptService {
     attempt.submittedAt = new Date();
     await this.attemptRepository.save(attempt);
 
+    // Delegate scoring to QuizResultService
     const result = await this.resultService.calculateScore(attempt.id);
 
     return {
@@ -155,6 +167,7 @@ export class QuizAttemptService {
     };
   }
 
+  // Get score after submission
   async getResult(quizId: string, user: any) {
     const attempt = await this.attemptRepository.findOne({
       where: { quizId, studentId: user.studentId || user.id },
