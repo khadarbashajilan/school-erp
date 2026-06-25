@@ -1,62 +1,34 @@
-import { IsString, IsNotEmpty, IsOptional, IsDateString, IsInt, Min, Max, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsDateString, IsInt, Min, Max } from 'class-validator';
 
 export class CreateQuizDto {
-  @IsString() 
-  @IsNotEmpty() 
+  @IsString()
+  @IsNotEmpty()
   title: string;
 
-  @IsOptional() 
-  @IsString() 
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @IsString() 
-  @IsNotEmpty() 
+  @IsString()
+  @IsNotEmpty()
   classId: string;
 
-  @IsString() 
-  @IsNotEmpty() 
-  className: string;
-
-  @IsString() 
-  @IsNotEmpty() 
+  @IsString()
+  @IsNotEmpty()
   section: string;
 
-  @IsString() 
-  @IsNotEmpty() 
+  @IsString()
+  @IsNotEmpty()
   subjectId: string;
 
-  @IsString() 
-  @IsNotEmpty() 
-  subjectName: string;
-
-  @IsDateString() // Validates format YYYY-MM-DD
+  @IsDateString()
   scheduledDate: string;
 
-  @IsString() // Validates format HH:MM
+  @IsString()
   startTime: string;
 
-  @IsInt() 
-  @Min(5) 
-  @Max(180) // Quiz must be between 5 and 180 minutes
+  @IsInt()
+  @Min(5)
+  @Max(180)
   durationMinutes: number;
-
-  @IsOptional() 
-  @IsInt() 
-  @Min(0) 
-  @Max(60) 
-  lateStartMinutes?: number; // Default is handled in entity (10)
-
-  @IsOptional() 
-  @IsInt() 
-  @Min(1) 
-  @Max(168) // Max 1 week delay for results
-  resultReleaseHours?: number; // Default is handled in entity (24)
-
-  @IsOptional() 
-  @IsBoolean() 
-  allowReviewBeforeSubmit?: boolean;
-
-  @IsOptional() 
-  @IsBoolean() 
-  showAnswerAfterResult?: boolean;
 }

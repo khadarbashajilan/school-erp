@@ -33,7 +33,7 @@ import { QuizEntity } from './entities/quiz.entity';
 import { QuizQuestionEntity } from './entities/quiz-question.entity';
 import { QuizAttemptEntity } from './entities/quiz-attempt.entity';
 import { QuizAnswerEntity } from './entities/quiz-answer.entity';
-import { QuizActivityLogEntity } from './entities/quiz-activity-log.entity';
+// import { QuizActivityLogEntity } from './entities/quiz-activity-log.entity';
 
 const ALL_ENTITIES = [
   UserEntity,
@@ -64,12 +64,11 @@ const ALL_ENTITIES = [
   HomeworkAssignmentEntity,
   HomeworkSubmissionEntity,
   TeachingAssignmentEntity,
-  TeachingAssignmentEntity,
   QuizEntity,
   QuizQuestionEntity,
   QuizAttemptEntity,
   QuizAnswerEntity,
-  QuizActivityLogEntity,
+  // QuizActivityLogEntity,
 ];
 import { buildDataSourceOptions } from './typeorm-options';
 
